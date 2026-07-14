@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "math-trainer"
+version = "0.1.0"
+description = "math-trainer — material extraction pipeline (Docling → Neo4j)"
+requires-python = ">=3.13, <3.14"
+dependencies = [
+  "neo4j>=5.28",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "pyyaml>=6.0",
+  "python-dotenv>=1.0",
+  "dspy-ai>=3.2.1",
+  "litellm>=1.0",
+  "langgraph>=0.2",
+  "docling>=2.93.0",
+  "docling-core>=2.0",
+  "Pillow>=10.0",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+  "testcontainers[neo4j]>=4.8",
+]
+
+[project.scripts]
+math-trainer = "math_trainer.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"

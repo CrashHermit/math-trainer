@@ -1,0 +1,72 @@
+# math-trainer configuration.
+# ${VAR} placeholders are interpolated from the environment / .env at load time.
+
+database:
+  uri: ${NEO4J_URI:-bolt://localhost:7687}
+  user: ${NEO4J_USER:-neo4j}
+  password: ${NEO4J_PASSWORD}
+  database: ${NEO4J_DATABASE:-neo4j}
+
+docling:
+  mode: remote_vlm            # remote_vlm | local_vlm | standard
+  vlm_api_base: ${VLM_API_BASE}
+  vlm_api_key: ${VLM_API_KEY}
+  vlm_model: ${VLM_MODEL}
+  picture_description_api_base: ${PICDESC_API_BASE}
+  picture_description_api_key: ${PICDESC_API_KEY}
+  picture_description_model: ${PICDESC_MODEL}
+  image_scale: 2.0
+  batch_size: 4
+  output_dir: output
+
+embedding:
+  api_base: ${EMBED_API_BASE}
+  api_key: ${EMBED_API_KEY}
+  model: ${EMBED_MODEL}
+  dimensions: 1024            # MUST match the vector index dimensions
+  similarity: cosine
+
+stages:
+  picture_filter:
+    model: ${VISION_MODEL}
+    api_base: ${VISION_API_BASE}
+    api_key: ${VISION_API_KEY}
+    batch_size: 16
+    max_concurrent: 2
+    num_retries: 5
+    timeout_s: 300.0
+  cleaner:
+    model: ${API_MODEL}
+    api_base: ${API_BASE}
+    api_key: ${API_KEY}
+    batch_size: 32
+    max_concurrent: 2
+    num_retries: 5
+    timeout_s: 300.0
+  extractor:
+    model: ${API_MODEL}
+    api_base: ${API_BASE}
+    api_key: ${API_KEY}
+    batch_size: 16
+    max_concurrent: 2
+    num_retries: 5
+    timeout_s: 300.0
+  seam_merger:
+    model: ${API_MODEL}
+    api_base: ${API_BASE}
+    api_key: ${API_KEY}
+    batch_size: 16
+    max_concurrent: 2
+    num_retries: 5
+    timeout_s: 300.0
+  refiner:
+    model: ${API_MODEL}
+    api_base: ${API_BASE}
+    api_key: ${API_KEY}
+    batch_size: 16
+    max_concurrent: 2
+    num_retries: 5
+    timeout_s: 300.0
+  embedder:
+    batch_size: 32
+    max_concurrent: 4

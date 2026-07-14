@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Env / secrets
+.env
+
+# Pipeline output (rendered page/figure images)
+output/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+uv.lock
