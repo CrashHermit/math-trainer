@@ -106,6 +106,19 @@ TEXT_EMBEDDABLE_TYPES: frozenset[NodeType] = frozenset(
     }
 )
 
+def element_subtype(node: dict) -> NodeType | None:
+    """The concrete Element subtype of a node dict (needs ``_labels`` projection)."""
+    subtype_values = {t.value for t in ELEMENT_SUBTYPES}
+    for label in node.get("_labels", []):
+        if label in subtype_values:
+            return NodeType(label)
+    return None
+
+
+def has_type(node: dict, node_type: NodeType) -> bool:
+    return node_type.value in (node.get("_labels") or [])
+
+
 # Types the Refiner has a specialized signature for.
 REFINABLE_TYPES: frozenset[NodeType] = frozenset(
     {

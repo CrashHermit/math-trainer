@@ -97,6 +97,21 @@ class GraphRepository:
     async def delete_node(self, uuid: str) -> None:
         await self.execute("MATCH (n {uuid: $uuid}) DETACH DELETE n", uuid=uuid)
 
+    async def set_element_type(
+        self, uuid: str, new_type: NodeType, old_type: NodeType | None = None
+    ) -> None:
+        """Swap an Element's concrete subtype label (keeps the base :Element)."""
+        if new_type.value not in _VALID_LABELS:
+            raise ValueError(f"Unknown node label: {new_type!r}")
+        remove = ""
+        if old_type is not None and old_type is not new_type:
+            remove = f"REMOVE n:`{old_type.value}` "
+        await self.execute(
+            f"MATCH (n:`Element` {{uuid: $uuid}}) {remove}SET n:`{new_type.value}`, "
+            "n.updated_at = $now",
+            uuid=uuid, now=_now(),
+        )
+
     # ── edges ──────────────────────────────────────────────────────────────
     async def link(
         self, edge: EdgeType, from_uuid: str, to_uuid: str, **props: object
@@ -156,19 +171,53 @@ class GraphRepository:
         rel = _edge_label(edge)
         rows = await self.run(
             f"MATCH (p {{uuid: $parent_uuid}})-[:{rel}]->(c) "
-            "RETURN c ORDER BY coalesce(c.order_index, c.segment_index, 0)",
+            "RETURN c{.*, _labels: labels(c)} AS c "
+            "ORDER BY coalesce(c.order_index, c.segment_index, 0)",
             parent_uuid=parent_uuid,
         )
         return [r["c"] for r in rows]
 
     async def source_elements_ordered(self, source_uuid: str) -> list[dict]:
-        """All Element nodes for a source in reading order (membership-based)."""
+        """All Element nodes for a source in reading order (membership-based).
+
+        Each dict includes ``_labels`` so callers can read the concrete subtype.
+        """
         rows = await self.run(
             "MATCH (e:`Element` {source_uuid: $source_uuid}) "
-            "RETURN e ORDER BY coalesce(e.order_index, 0)",
+            "RETURN e{.*, _labels: labels(e)} AS e "
+            "ORDER BY coalesce(e.order_index, 0)",
             source_uuid=source_uuid,
         )
         return [r["e"] for r in rows]
+
+    async def rebuild_reading_chain(self, source_uuid: str) -> None:
+        """Rebuild the Next chain + Has head edge from current order_index values.
+
+        Structural stages (Picture Filter delete, Extractor split, Seam merge)
+        mutate nodes/order_index then call this, so chain integrity never depends
+        on incremental edge surgery.
+        """
+        els = await self.source_elements_ordered(source_uuid)
+        uuids = [e["uuid"] for e in els]
+        await self.execute(
+            "MATCH (:`Source` {uuid: $s})-[h:`Has`]->() DELETE h", s=source_uuid
+        )
+        await self.execute(
+            "MATCH (:`Element` {source_uuid: $s})-[r:`Next`]->(:`Element` {source_uuid: $s}) "
+            "DELETE r",
+            s=source_uuid,
+        )
+        await self.link_chain(uuids, EdgeType.NEXT)
+        if uuids:
+            await self.link(EdgeType.HAS, source_uuid, uuids[0])
+
+    async def segment_for_element(self, element_uuid: str) -> dict | None:
+        """The Segment that Contains this element."""
+        rows = await self.run(
+            "MATCH (seg:`Segment`)-[:`Contains`]->(e:`Element` {uuid: $u}) RETURN seg LIMIT 1",
+            u=element_uuid,
+        )
+        return rows[0]["seg"] if rows else None
 
     # ── vector search ──────────────────────────────────────────────────────
     async def vector_search(
