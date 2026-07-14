@@ -67,14 +67,14 @@ stages:
     max_concurrent: 2
     num_retries: 5
     timeout_s: 300.0
-  refiner:
+  assembler:
     model: ${API_MODEL}
     api_base: ${API_BASE}
     api_key: ${API_KEY}
-    batch_size: 16
-    max_concurrent: 2
     num_retries: 5
     timeout_s: 300.0
+    main_window_tokens: 1500
+    context_window_tokens: 400
   embedder:
     batch_size: 32
     max_concurrent: 4

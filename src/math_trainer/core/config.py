@@ -66,6 +66,10 @@ class StageConfig(BaseModel):
     max_concurrent: int = 2
     num_retries: int = 5
     timeout_s: float = 300.0
+    # Assembler-only: token budgets for the main (commit) window and the read-only
+    # context peeked past its trailing edge.
+    main_window_tokens: int = 1500
+    context_window_tokens: int = 400
 
 
 class Config(BaseModel):

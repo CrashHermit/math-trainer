@@ -15,6 +15,7 @@ class NodeType(StrEnum):
     # Structural
     SOURCE = "Source"
     SEGMENT = "Segment"
+    BLOCK = "Block"          # semantic unit (the Assembler overlay; embed/retrieval unit)
 
     # Element base + concrete content types
     ELEMENT = "Element"
@@ -27,7 +28,7 @@ class NodeType(StrEnum):
     LIST_ITEM = "ListItem"
     CODE = "Code"
     IMAGE = "Image"
-    # Pedagogical types the Extractor/Refiner may promote to
+    # Pedagogical types the Extractor may promote to (anchors for the Assembler)
     ADMONITION = "Admonition"
     INSTRUCTION = "Instruction"
     ACTIVITY = "Activity"
@@ -55,10 +56,11 @@ ELEMENT_SUBTYPES: frozenset[NodeType] = frozenset(
 class EdgeType(StrEnum):
     """Relationship types."""
 
-    CONTAINS = "Contains"   # Source→Segment, Segment→Element (membership/structure)
+    CONTAINS = "Contains"   # Source→Segment, Segment→Element, Source→Block (membership)
     HAS = "Has"             # Source→head Element (entry into the reading chain)
-    NEXT = "Next"           # Element→Element (reading order)
+    NEXT = "Next"           # Element→Element / Block→Block (reading order)
     INSTRUCTS = "Instructs" # Instruction→Activity (a lead instruction governs an exercise)
+    GROUPS = "Groups"       # Block→Element (a semantic unit groups these elements)
 
 
 # Docling DocItemLabel (lower-cased) → Element subtype. Unknown labels fall back
@@ -119,12 +121,39 @@ def has_type(node: dict, node_type: NodeType) -> bool:
     return node_type.value in (node.get("_labels") or [])
 
 
-# Types the Refiner has a specialized signature for.
-REFINABLE_TYPES: frozenset[NodeType] = frozenset(
-    {
-        NodeType.CODE,
-        NodeType.ACTIVITY,
-        NodeType.INSTRUCTION,
-        NodeType.ADMONITION,
-    }
+# ── Assembler / Block layer ───────────────────────────────────────────────────
+# Block kinds (the `kind` property on :Block). LLM-assigned kinds for grouped
+# prose are free-form strings; these are the well-known ones.
+class BlockKind(StrEnum):
+    PROSE = "prose"
+    DEFINITION = "definition"
+    THEOREM = "theorem"
+    EXAMPLE = "example"
+    REMARK = "remark"
+    EXERCISE = "exercise"
+    INSTRUCTION = "instruction"
+    ADMONITION = "admonition"
+    FIGURE = "figure"
+
+
+# Anchors are the only Element subtypes already at atomic-unit granularity: a
+# single exercise (Activity) and a lead line (Instruction). The Assembler promotes
+# each to its own Block (no LLM grouping); an Activity also ABSORBS the components
+# that belong to it (e.g. its figure). Everything else — including Admonition and
+# Image — flows through the windowed LLM grouping.
+ANCHOR_TYPES: dict[NodeType, BlockKind] = {
+    NodeType.ACTIVITY: BlockKind.EXERCISE,
+    NodeType.INSTRUCTION: BlockKind.INSTRUCTION,
+}
+
+# Component types an anchor absorbs (a figure/table/equation right after an
+# exercise belongs to it). The absorption stops at anything not listed here
+# (prose, heading, admonition, another anchor).
+ABSORBABLE_TYPES: frozenset[NodeType] = frozenset(
+    {NodeType.IMAGE, NodeType.TABLE, NodeType.CAPTION, NodeType.MATH,
+     NodeType.LIST, NodeType.LIST_ITEM, NodeType.CODE}
 )
+
+
+def is_anchor(node: dict) -> bool:
+    return element_subtype(node) in ANCHOR_TYPES

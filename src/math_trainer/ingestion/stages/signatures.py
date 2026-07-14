@@ -71,13 +71,33 @@ class LinkDecisionSignature(dspy.Signature):
     should_link: bool = dspy.OutputField(desc="True if the instruction governs this activity.")
 
 
-class RefinerSignature(dspy.Signature):
-    """Refine a single element of the given type (Code/Activity/Instruction/
-    Admonition): normalize structure and formatting without changing meaning.
-    Return the full refined content."""
+class AssembledUnit(BaseModel):
+    kind: str          # a Block kind, e.g. "prose", "definition", "theorem", "example"
+    members: list[str] # uuids of the window blocks (contiguous) that form this unit
+    label: str | None = None
 
-    element_type: str = dspy.InputField(desc="The element's concrete type.")
-    current_content: str = dspy.InputField(desc="The content to refine.")
-    previous_context: str | None = dspy.InputField(desc="Preceding element (context).")
-    next_context: str | None = dspy.InputField(desc="Following element (context).")
-    content: str = dspy.OutputField(desc="The refined content.")
+
+class AssemblerSignature(dspy.Signature):
+    """Segment a window of ungrouped content blocks into semantic units for a math
+    textbook. Group a definition, a theorem (with its statement), a worked example,
+    or a coherent prose+math cluster into one unit; keep a statement and its proof,
+    or a problem and its solution, as SEPARATE units. Return the units that are
+    fully contained in the window in order; put the uuids of a trailing unit that
+    is clearly incomplete (continues past the window) into `deferred` so it can be
+    completed with more context — do not guess its end."""
+
+    window: list[dict] = dspy.InputField(
+        desc="Ordered content blocks {uuid, type, content} to segment."
+    )
+    leading_context: str | None = dspy.InputField(
+        desc="Short summary of the previously committed unit (read-only)."
+    )
+    trailing: list[dict] = dspy.InputField(
+        desc="Upcoming blocks just past the window (read-only, for seeing boundaries)."
+    )
+    units: list[AssembledUnit] = dspy.OutputField(
+        desc="Complete units in reading order; members are window uuids."
+    )
+    deferred: list[str] = dspy.OutputField(
+        desc="Trailing window uuids forming an incomplete unit to carry forward."
+    )

@@ -9,13 +9,14 @@ for the full design.
 ## Pipeline
 
 ```
-Docling → Picture Filter → Cleaner → Extractor → Seam Merger → Distributor → Refiner → Embedder
+Docling → Picture Filter → Cleaner → Extractor → Seam Merger → Distributor → Assembler → Embedder
 ```
 
 Docling (remote-VLM by default) is the sole text extractor and emits typed,
-positioned items plus figure "blurbs". Content is stored as
-`Source → Segment(page) → Element` (multi-label `:Element:<Type>`), with a single
-cosine vector index on `:Element`.
+positioned items plus figure "blurbs". Elements (`:Element:<Type>`) form the
+structural backbone (`Source → Segment(page) → Element`); the **Assembler** then
+builds a `:Block` overlay — the semantic unit that is the embed/retrieval unit —
+with a single cosine vector index on `:Block`.
 
 ## Quickstart
 
@@ -62,6 +63,6 @@ src/math_trainer/
     service.py            # pipeline driver (resume-from-stage)
     pipeline/graph.py     # minimal LangGraph chain
     stages/               # picture_filter, cleaner, extractor, seam_merger,
-                          #   distributor, refiner, embedder
+                          #   distributor, assembler, embedder
   storage/neo4j/          # async driver, repository, schema bootstrap
 ```

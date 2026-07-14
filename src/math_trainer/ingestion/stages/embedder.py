@@ -1,19 +1,13 @@
-"""Stage 7 — Embedder.
+"""Stage 8 — Embedder.
 
-Embed text-bearing Elements from their normalized content and Image Elements from
-their blurb text, into ``embedding`` on the node. A content fingerprint skips
-re-embedding unchanged content on re-runs.
+Embed each ``:Block`` (the semantic unit) from its composed content into
+``embedding`` on the block. A content fingerprint skips re-embedding unchanged
+blocks on re-runs.
 """
 
 import hashlib
 
 from math_trainer.core.config import StageConfig
-from math_trainer.core.model.types import (
-    TEXT_EMBEDDABLE_TYPES,
-    NodeType,
-    element_subtype,
-    has_type,
-)
 from math_trainer.ingestion.normalize import normalize_math
 from math_trainer.ingestion.stages.base import concurrent_map, now_iso
 from math_trainer.providers.embedding import Embedder
@@ -32,31 +26,24 @@ class EmbedderStage:
         self._embedder = embedder
         self._config = config
 
-    def _embed_text(self, element: dict) -> str | None:
-        if has_type(element, NodeType.IMAGE):
-            return (element.get("blurb") or "").strip() or None
-        if element_subtype(element) in TEXT_EMBEDDABLE_TYPES:
-            return normalize_math(element.get("content")) or None
-        return None
-
     async def run(self, source_uuid: str) -> None:
-        ordered = await self._repo.source_elements_ordered(source_uuid)
+        blocks = await self._repo.source_blocks_ordered(source_uuid)
 
         targets: list[tuple[dict, str, str]] = []
-        for element in ordered:
-            text = self._embed_text(element)
+        for block in blocks:
+            text = normalize_math(block.get("content"))
             if not text:
                 continue
             fp = _fingerprint(text)
-            if element.get("embed_fingerprint") == fp:
+            if block.get("embed_fingerprint") == fp:
                 continue
-            targets.append((element, text, fp))
+            targets.append((block, text, fp))
 
         async def embed(item: tuple[dict, str, str]) -> None:
-            element, text, fp = item
+            block, text, fp = item
             vector = await self._embedder.embed(text)
             await self._repo.update_node(
-                element["uuid"],
+                block["uuid"],
                 embedding=vector,
                 embed_fingerprint=fp,
                 embedded_at=now_iso(),

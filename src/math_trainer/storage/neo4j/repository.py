@@ -189,6 +189,25 @@ class GraphRepository:
         )
         return [r["e"] for r in rows]
 
+    async def source_blocks_ordered(self, source_uuid: str) -> list[dict]:
+        """All Block nodes for a source in reading order."""
+        rows = await self.run(
+            "MATCH (b:`Block` {source_uuid: $source_uuid}) "
+            "RETURN b{.*, _labels: labels(b)} AS b "
+            "ORDER BY coalesce(b.order_index, 0)",
+            source_uuid=source_uuid,
+        )
+        return [r["b"] for r in rows]
+
+    async def governing_instruction_text(self, activity_uuid: str) -> str | None:
+        """The content of the Instruction that governs this Activity, if any."""
+        rows = await self.run(
+            "MATCH (i:`Instruction`)-[:`Instructs`]->(a:`Element` {uuid: $u}) "
+            "RETURN i.content AS content LIMIT 1",
+            u=activity_uuid,
+        )
+        return rows[0]["content"] if rows and rows[0]["content"] else None
+
     async def rebuild_reading_chain(self, source_uuid: str) -> None:
         """Rebuild the Next chain + Has head edge from current order_index values.
 

@@ -7,14 +7,14 @@ import pytest
 import pytest_asyncio
 
 from math_trainer.core.config import DoclingConfig, EmbeddingConfig, StageConfig
-from math_trainer.core.model.types import NodeType, element_subtype, has_type
+from math_trainer.core.model.types import NodeType, has_type
 from math_trainer.ingestion.service import IngestionService
+from math_trainer.ingestion.stages.assembler import AssemblerStage
 from math_trainer.ingestion.stages.cleaner import CleanerStage
 from math_trainer.ingestion.stages.distributor import DistributorStage
 from math_trainer.ingestion.stages.embedder import EmbedderStage
 from math_trainer.ingestion.stages.extractor import ExtractorStage
 from math_trainer.ingestion.stages.picture_filter import PictureFilterStage
-from math_trainer.ingestion.stages.refiner import RefinerStage
 from math_trainer.ingestion.stages.seam_merger import SeamMergerStage
 from math_trainer.providers.docling import DoclingProvider, NormalizedDocument, NormalizedItem
 from math_trainer.storage.neo4j.schema import Schema
@@ -88,7 +88,14 @@ async def service(repo, tmp_path):
         ExtractorStage(repo, FakeModule(lambda **kw: SimpleNamespace(items=None)), CFG),
         SeamMergerStage(repo, FakeModule(lambda **kw: SimpleNamespace(merged=False)), CFG),
         DistributorStage(repo, FakeModule(lambda **kw: SimpleNamespace(should_link=True)), CFG),
-        RefinerStage(repo, FakeModule(lambda **kw: SimpleNamespace(content=(kw["current_content"] or "").replace(" ", ""))), CFG),
+        AssemblerStage(
+            repo,
+            FakeModule(lambda **kw: SimpleNamespace(
+                units=[{"kind": "prose", "members": [b["uuid"] for b in kw["window"]]}],
+                deferred=[],
+            )),
+            CFG,
+        ),
         EmbedderStage(repo, embedder, CFG),
     )
     return SimpleNamespace(svc=svc, embedder=embedder)
@@ -101,19 +108,11 @@ async def test_full_ingest(service, repo):
     assert source["stage"] == 8
     assert source["status"] == "complete"
 
+    # Element backbone intact: decorative image dropped → 8 elements remain.
     els = await repo.source_elements_ordered(uid)
-    # decorative image dropped → 8 elements remain
     assert len(els) == 8
     images = [e for e in els if has_type(e, NodeType.IMAGE)]
     assert len(images) == 1 and images[0]["blurb"] == "A unit circle."
-
-    # code element refined (spaces removed)
-    code = next(e for e in els if element_subtype(e) is NodeType.CODE)
-    assert code["content"] == "print(1)" and code["refined_at"]
-
-    # every embeddable element got a vector (7 text + 1 image blurb)
-    embedded = [e for e in els if e.get("embedding")]
-    assert len(embedded) == 8
 
     # distributor linked the instruction to both activities
     links = await repo.run(
@@ -122,18 +121,25 @@ async def test_full_ingest(service, repo):
     )
     assert links[0]["n"] == 2
 
-    # reading chain spans all 8 elements from the head
-    chain = await repo.run(
-        "MATCH p=(:`Source` {uuid:$s})-[:`Has`]->()-[:`Next`*]->() "
-        "RETURN max(length(p)) AS len", s=uid,
-    )
-    assert chain[0]["len"] == 8
+    # Assembler: prose grouped; each Activity promoted to its own exercise block
+    # carrying its instruction; a lone prose block for the trailing paragraph.
+    blocks = await repo.source_blocks_ordered(uid)
+    assert [b["kind"] for b in blocks] == ["prose", "instruction", "exercise", "exercise", "prose"]
+    exercises = [b for b in blocks if b["kind"] == "exercise"]
+    assert len(exercises) == 2
+    assert all("Solve for x:" in b["content"] for b in exercises)   # instruction carried in
+    # the first prose block absorbed the kept figure's blurb
+    assert "[figure] A unit circle." in blocks[0]["content"]
+
+    # every block embedded (blocks are the embed unit now)
+    assert all(b.get("embedding") for b in blocks)
+    assert service.embedder.calls == 5
 
 
 async def test_resume_reembeds_only(service, repo):
     uid = await service.svc.ingest("/tmp/fake.pdf", title="Doc")
     calls_after_first = service.embedder.calls
-    assert calls_after_first == 8
+    assert calls_after_first == 5  # one call per block
 
     # Resume from the embedder stage: fingerprints match → no re-embedding.
     await service.svc.ingest("/tmp/fake.pdf", source_uuid=uid, from_stage=8)

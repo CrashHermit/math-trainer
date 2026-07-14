@@ -3,12 +3,12 @@
 from pathlib import Path
 
 from math_trainer.ingestion.pipeline.graph import build_pipeline
+from math_trainer.ingestion.stages.assembler import AssemblerStage
 from math_trainer.ingestion.stages.cleaner import CleanerStage
 from math_trainer.ingestion.stages.distributor import DistributorStage
 from math_trainer.ingestion.stages.embedder import EmbedderStage
 from math_trainer.ingestion.stages.extractor import ExtractorStage
 from math_trainer.ingestion.stages.picture_filter import PictureFilterStage
-from math_trainer.ingestion.stages.refiner import RefinerStage
 from math_trainer.ingestion.stages.seam_merger import SeamMergerStage
 from math_trainer.providers.docling import DoclingProvider
 from math_trainer.storage.neo4j.repository import GraphRepository
@@ -21,7 +21,7 @@ STAGE_NAMES = {
     4: "extractor",
     5: "seam_merger",
     6: "distributor",
-    7: "refiner",
+    7: "assembler",
     8: "embedder",
 }
 STAGE_MAX = max(STAGE_NAMES)
@@ -38,7 +38,7 @@ class IngestionService:
         extractor: ExtractorStage,
         seam_merger: SeamMergerStage,
         distributor: DistributorStage,
-        refiner: RefinerStage,
+        assembler: AssemblerStage,
         embedder: EmbedderStage,
     ) -> None:
         self._repo = repo
@@ -50,7 +50,7 @@ class IngestionService:
             4: extractor,
             5: seam_merger,
             6: distributor,
-            7: refiner,
+            7: assembler,
             8: embedder,
         }
         self._graph = build_pipeline(self)

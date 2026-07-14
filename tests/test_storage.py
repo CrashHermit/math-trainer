@@ -89,8 +89,8 @@ async def test_vector_roundtrip(repo):
     far = [0, 0, 0, 0, 0, 0, 0, 1.0]
     query = [0.9, 0.1, 0, 0, 0, 0, 0, 0]
 
-    n1 = await repo.create_node([NodeType.ELEMENT, NodeType.PARAGRAPH], content="near", embedding=near)
-    await repo.create_node([NodeType.ELEMENT, NodeType.PARAGRAPH], content="far", embedding=far)
+    n1 = await repo.create_node([NodeType.BLOCK], kind="prose", content="near", embedding=near)
+    await repo.create_node([NodeType.BLOCK], kind="prose", content="far", embedding=far)
 
     # Vector index population can lag a commit briefly; retry a few times.
     results: list = []

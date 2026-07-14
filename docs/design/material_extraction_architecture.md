@@ -32,14 +32,14 @@
   CLI  ─────────▶│  Ingestion service (pipeline driver)                              │
   ingest <path>  │                                                                   │
                  │   Docling ─▶ Picture Filter ─▶ Cleaner ─▶ Extractor ─▶            │
-                 │             Seam Merger ─▶ Distributor ─▶ Refiner ─▶ Embedder      │
+                 │             Seam Merger ─▶ Distributor ─▶ Assembler ─▶ Embedder    │
                  │                                                                   │
                  │   DSPy (stage LLM I/O)   LangGraph (per-stage fan-out)            │
                  └───────────────┬───────────────────────────────────────────────────┘
                                  │  async Neo4j repository (Bolt)
                                  ▼
                          Neo4j (Docker, Community 5.x)
-                         Source → Segment → Element  +  vector index on :Element
+                         Source → Segment → Element (backbone) → Block  +  vector index on :Block
 ```
 
 Two supporting subsystems:
@@ -62,8 +62,8 @@ LangGraph fan-out (`dispatch → worker → condense`) over a batch of nodes.
 | 4 | **Extractor** | DSPy (text) | Docling-typed Elements + neighbors | regrouped/retyped Elements (e.g. Instruction + Activities) |
 | 5 | **Seam Merger** | DSPy (text) | Elements at page boundaries | merged cross-page continuations |
 | 6 | **Distributor** | DSPy (text) | Instruction + Activity elements | `Instructs` edges linking instructions → governed activities |
-| 7 | **Refiner** | DSPy (text) | Code/Activity/Instruction/Admonition elements | refined `content` (+ structured fields) |
-| 8 | **Embedder** | embedding provider | each embeddable Element | `embedding` vector on each Element |
+| 7 | **Assembler** | DSPy (text) + rules | Elements in reading order | `:Block` semantic units (the embed/retrieval unit) grouping the Elements |
+| 8 | **Embedder** | embedding provider | each `:Block` | `embedding` vector on each Block |
 
 ### 3.1 Docling (provider)
 - Accepts **PDF** (`InputFormat.PDF`) or **image** (`InputFormat.IMAGE`). A loose image is treated as a single-page document.
@@ -108,15 +108,37 @@ LangGraph fan-out (`dispatch → worker → condense`) over a batch of nodes.
 - An LLM confirms ambiguous pairs (`should_link`); with no decision it links the whole window. Idempotent via `distributed_at` on the Activity and a MERGE'd edge.
 - (Ported from Paideia's `activity_instruction_distributor`, simplified: window + LLM confirmation instead of identifier-range matching.)
 
-### 3.7 Refiner
-- DSPy **text** Signatures specialized per type: `Code`, `Activity`, `Instruction`, `Admonition`.
-- Refines/normalizes those specific element types (e.g. clean code fences, structure an exercise stem + subparts). Other types pass through untouched.
-- Idempotent per element.
+### 3.7 Assembler
+Builds the **`:Block`** overlay — the semantic unit that becomes the embed/retrieval
+unit. Elements stay untouched as the structural backbone; each Block `Groups` a
+contiguous run of Elements. (The Refiner is retired: its format work folds into the
+Cleaner; per-type structuring is deferred to the knowledge layer.)
+
+- **Stateful, sequential walk** over the reading chain (the one stage that is not a
+  fan-out — each window's start is the previous window's cut point). Resumable via a
+  cursor; the carried open unit is transient. Idempotent: existing Blocks are dropped
+  and rebuilt (Elements never touched).
+- **Anchors** — `Activity` and `Instruction` only — are already at unit granularity:
+  each is promoted 1:1 to a Block (no LLM), and an `Activity` **absorbs** the
+  components that belong to it (its figure/table/equation). An exercise Block carries
+  its governing `Instruction` text (via the `Instructs` edge). Anchors close any open
+  ungrouped region.
+- **Everything else** (Paragraph, Heading, Math, Table, Caption, List, Code, Image,
+  Admonition) is **ungrouped content**: it accumulates into a token-bounded **main
+  window**; when full, an LLM segments it into typed units (definition / theorem /
+  example / prose …), keeping statement|proof and problem|solution as *separate* linked
+  units. A read-only **context window** of upcoming blocks is peeked past the edge.
+- **Commit-once handoff + greedy-to-unit-boundary:** only the main window commits; the
+  LLM defers a trailing incomplete unit, which carries into the next window, so a unit
+  never splits across windows. On `None`/failure the window degrades to one prose Block.
+- Window sizes (`main_window_tokens`, `context_window_tokens`) are config.
 
 ### 3.8 Embedder
-- One **text** embedding provider. For text-bearing Elements, embed the normalized (math-normalized) `content`; for **Image** elements, embed the **blurb** text.
-- Stores the vector on `Element.embedding`. Uses a **content fingerprint** to skip re-embedding unchanged content on re-runs.
-- After the source finishes, ensure the Neo4j vector index is **online/populated** (see §5.3).
+- Embeds each **`:Block`** from its composed (math-normalized) `content`. Image blurbs
+  ride along inside their Block's content.
+- Stores the vector on `Block.embedding`. Uses a **content fingerprint** to skip
+  re-embedding unchanged Blocks on re-runs.
+- The Neo4j vector index is on `:Block` (see §5.3).
 
 ---
 
@@ -127,21 +149,24 @@ LangGraph fan-out (`dispatch → worker → condense`) over a batch of nodes.
 |-------|---------|-----------|
 | `:Source` | one ingested document/image | `uuid`, `title`, `source_path`, `status`, `stage`, `created_at`, `updated_at` |
 | `:Segment` | one page | `uuid`, `segment_index` (page no.), `src` (page raster), timestamps |
-| `:Element:<Type>` | one content unit | `uuid`, `content`, `source_uuid`, `embedding`, stage markers, timestamps |
-| `:Element:Image` | a kept figure | `uuid`, `src` (file), `blurb`, `bbox`, `page_no`, `embedding`, `source_uuid` |
+| `:Element:<Type>` | one atomic content element (backbone) | `uuid`, `content`, `source_uuid`, stage markers, timestamps |
+| `:Element:Image` | a kept figure | `uuid`, `src` (file), `blurb`, `bbox`, `page_no`, `source_uuid` |
+| `:Block` | a semantic unit (embed/retrieval unit) | `uuid`, `kind`, `label`, `content` (composed), `source_uuid`, `embedding`, timestamps |
 
-`<Type>` ∈ `Paragraph, Heading, Math, Table, Caption, List, ListItem, Code, Image, Admonition, Instruction, Activity` (extend as needed). **Every content node carries the base `:Element` label** plus one concrete type label.
+`<Type>` ∈ `Paragraph, Heading, Math, Table, Caption, List, ListItem, Code, Image, Admonition, Instruction, Activity` (extend as needed). **Every content node carries the base `:Element` label** plus one concrete type label. `Block.kind` ∈ `prose, definition, theorem, example, remark, exercise, instruction, admonition, figure` (LLM-assigned kinds are free-form).
 
 ### 4.2 Edges
 | Type | From → To | Meaning |
 |------|-----------|---------|
-| `Contains` | Source → Segment, Segment → Element | membership / structure |
+| `Contains` | Source → Segment, Segment → Element, Source → Block | membership / structure |
 | `Has` | Source → head Element | entry point into the element reading chain |
-| `Next` | Element → Element | reading order |
+| `Next` | Element → Element, Block → Block | reading order |
 | `Instructs` | Instruction → Activity | a lead instruction governs an exercise |
+| `Groups` | Block → Element | a semantic unit groups these elements |
 
 Membership (`Contains`) is the **authoritative selection** for batching, so a broken `Next`
-chain degrades ordering but never completeness.
+chain degrades ordering but never completeness. **Elements are the structural backbone;
+Blocks are a non-destructive overlay** (drop-and-rebuild safe).
 
 ### 4.3 Docling item → Element type mapping (starting point)
 | Docling label | Element type |
@@ -155,13 +180,13 @@ chain degrades ordering but never completeness.
 | code | `Code` |
 | picture | `Image` (with blurb) |
 
-Refiner/Extractor may promote generic types to pedagogical ones (`Admonition`, `Instruction`, `Activity`).
+The Extractor may promote generic types to pedagogical ones (`Admonition`, `Instruction`, `Activity`).
 
 ### 4.4 Constraints & indexes (Neo4j)
 - `CREATE CONSTRAINT element_uuid IF NOT EXISTS FOR (n:Element) REQUIRE n.uuid IS UNIQUE`
-- Unique-uuid constraints likewise for `:Source`, `:Segment`.
-- Range indexes: `Element.source_uuid`, `Segment.segment_index`.
-- Vector index: see §5.3.
+- Unique-uuid constraints likewise for `:Source`, `:Segment`, `:Block`.
+- Range indexes: `Element.source_uuid`, `Block.source_uuid`, `Segment.segment_index`.
+- Vector index on `:Block` (see §5.3).
 
 ---
 
@@ -178,10 +203,10 @@ Refiner/Extractor may promote generic types to pedagogical ones (`Admonition`, `
 - All access is **pure Cypher** (no ArcadeDB-SQL, no `expand()`/`vectorNeighbors` — those become Cypher + the vector-index procedure).
 
 ### 5.3 Vector search
-- One index over the base label:
+- One index over the semantic unit (`:Block`):
   ```cypher
-  CREATE VECTOR INDEX element_embedding IF NOT EXISTS
-  FOR (n:Element) ON n.embedding
+  CREATE VECTOR INDEX block_embedding IF NOT EXISTS
+  FOR (n:Block) ON n.embedding
   OPTIONS { indexConfig: {
     `vector.dimensions`: $dims,          // from config (embedding model)
     `vector.similarity_function`: 'cosine'
@@ -189,10 +214,10 @@ Refiner/Extractor may promote generic types to pedagogical ones (`Admonition`, `
   ```
 - Query:
   ```cypher
-  CALL db.index.vector.queryNodes('element_embedding', $k, $query_vector)
+  CALL db.index.vector.queryNodes('block_embedding', $k, $query_vector)
   YIELD node, score RETURN node, score;
   ```
-- Multi-label means **all element subtypes share this one index** — collapsing Paideia's per-subtype indexes into a single one. Dimensions come from the configured embedding model.
+- The `:Block` overlay is the retrieval unit, so there is a **single** index (no per-subtype indexes, unlike Paideia). Dimensions come from the configured embedding model.
 
 ---
 
@@ -253,7 +278,7 @@ Refiner/Extractor may promote generic types to pedagogical ones (`Admonition`, `
     cleaner:        { model: ${API_MODEL}, batch_size: 32, max_concurrent: 2, ... }
     extractor:      { ... }
     seam_merger:    { ... }
-    refiner:        { ... }
+    assembler:      { model, main_window_tokens: 1500, context_window_tokens: 400, ... }
   ```
 - Per-stage sections allow different models per stage (e.g. a vision model for Picture Filter).
 
@@ -290,7 +315,7 @@ math-trainer/
       service.py            # pipeline driver (resume-from-stage)
       pipeline/graph.py     # minimal LangGraph builders
       stages/               # picture_filter, cleaner, extractor, seam_merger,
-                            #   distributor, refiner, embedder
+                            #   distributor, assembler, embedder
       normalize.py
     core/
       config.py             # pydantic config (YAML + .env)
@@ -314,14 +339,14 @@ math-trainer/
 1. **Scaffold** — `pyproject.toml` (uv, py3.13), `docker-compose.yml`, config models, `.env.example`.
 2. **Storage** — async driver + repository + schema bootstrap (`init-db`); testcontainers fixture; storage tests (CRUD, chain, vector round-trip).
 3. **Docling provider** — remote-VLM conversion → `Source/Segment/Element` materialization + blurbs; fixture-based test.
-4. **Picture Filter → Cleaner → Extractor → Seam Merger → Distributor → Refiner** — one stage at a time, each with a DSPy Signature and an idempotency marker.
+4. **Picture Filter → Cleaner → Extractor → Seam Merger → Distributor → Assembler** — one stage at a time, each with a DSPy Signature and an idempotency marker (Assembler builds the `:Block` overlay).
 5. **Embedder** + vector-index population; retrieval round-trip test.
 6. **Ingestion service** (resume-from-stage) + **CLI**; end-to-end fixture test (PDF + image).
 
 ---
 
 ## 14. Deferred / open
-- Exact Seam Merger heuristics and Refiner per-type schemas (design at implementation time).
+- Exact Seam Merger heuristics and Assembler LLM prompt/kinds (refine against real Docling output).
 - Concrete VLM / embedding model choices + vector dimensions (config values).
 - Hybrid keyword (full-text) search — deferred; vector-only for now.
 - Knowledge-graph, mastery, API/frontend — future phases.
