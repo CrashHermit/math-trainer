@@ -1,10 +1,10 @@
 """IngestionService — the pipeline driver (resume-from-stage) over a LangGraph chain."""
-from __future__ import annotations
 
 from pathlib import Path
 
 from math_trainer.ingestion.pipeline.graph import build_pipeline
 from math_trainer.ingestion.stages.cleaner import CleanerStage
+from math_trainer.ingestion.stages.distributor import DistributorStage
 from math_trainer.ingestion.stages.embedder import EmbedderStage
 from math_trainer.ingestion.stages.extractor import ExtractorStage
 from math_trainer.ingestion.stages.picture_filter import PictureFilterStage
@@ -20,8 +20,9 @@ STAGE_NAMES = {
     3: "cleaner",
     4: "extractor",
     5: "seam_merger",
-    6: "refiner",
-    7: "embedder",
+    6: "distributor",
+    7: "refiner",
+    8: "embedder",
 }
 STAGE_MAX = max(STAGE_NAMES)
 
@@ -36,6 +37,7 @@ class IngestionService:
         cleaner: CleanerStage,
         extractor: ExtractorStage,
         seam_merger: SeamMergerStage,
+        distributor: DistributorStage,
         refiner: RefinerStage,
         embedder: EmbedderStage,
     ) -> None:
@@ -47,8 +49,9 @@ class IngestionService:
             3: cleaner,
             4: extractor,
             5: seam_merger,
-            6: refiner,
-            7: embedder,
+            6: distributor,
+            7: refiner,
+            8: embedder,
         }
         self._graph = build_pipeline(self)
 

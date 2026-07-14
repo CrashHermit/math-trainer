@@ -5,7 +5,6 @@ here (unlike the ArcadeDB-embedded design this project is modeled on). A single
 shared ``AsyncDriver`` is used for the process; sessions are cheap and created
 per unit of work.
 """
-from __future__ import annotations
 
 from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncSession
 

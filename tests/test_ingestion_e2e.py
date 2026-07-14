@@ -1,5 +1,4 @@
 """End-to-end pipeline test: full ingest through the IngestionService with fakes."""
-from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +10,7 @@ from math_trainer.core.config import DoclingConfig, EmbeddingConfig, StageConfig
 from math_trainer.core.model.types import NodeType, element_subtype, has_type
 from math_trainer.ingestion.service import IngestionService
 from math_trainer.ingestion.stages.cleaner import CleanerStage
+from math_trainer.ingestion.stages.distributor import DistributorStage
 from math_trainer.ingestion.stages.embedder import EmbedderStage
 from math_trainer.ingestion.stages.extractor import ExtractorStage
 from math_trainer.ingestion.stages.picture_filter import PictureFilterStage
@@ -46,6 +46,9 @@ class FakeProvider(DoclingProvider):
             NormalizedItem(1, NodeType.IMAGE, image=FakeImage(), blurb="A unit circle."),
             NormalizedItem(1, NodeType.IMAGE, image=FakeImage(), blurb="decorative flourish"),
             NormalizedItem(1, NodeType.CODE, content="print( 1 )"),
+            NormalizedItem(2, NodeType.INSTRUCTION, content="Solve for x:"),
+            NormalizedItem(2, NodeType.ACTIVITY, content="x + 1 = 2"),
+            NormalizedItem(2, NodeType.ACTIVITY, content="x - 3 = 0"),
             NormalizedItem(2, NodeType.PARAGRAPH, content="Body text."),
         ]
         return doc
@@ -84,6 +87,7 @@ async def service(repo, tmp_path):
         CleanerStage(repo, FakeModule(lambda **kw: SimpleNamespace(content=(kw["current_content"] or "").strip())), CFG),
         ExtractorStage(repo, FakeModule(lambda **kw: SimpleNamespace(items=None)), CFG),
         SeamMergerStage(repo, FakeModule(lambda **kw: SimpleNamespace(merged=False)), CFG),
+        DistributorStage(repo, FakeModule(lambda **kw: SimpleNamespace(should_link=True)), CFG),
         RefinerStage(repo, FakeModule(lambda **kw: SimpleNamespace(content=(kw["current_content"] or "").replace(" ", ""))), CFG),
         EmbedderStage(repo, embedder, CFG),
     )
@@ -94,38 +98,45 @@ async def test_full_ingest(service, repo):
     uid = await service.svc.ingest("/tmp/fake.pdf", title="Doc")
 
     source = await repo.get_node(uid, NodeType.SOURCE)
-    assert source["stage"] == 7
+    assert source["stage"] == 8
     assert source["status"] == "complete"
 
     els = await repo.source_elements_ordered(uid)
-    # decorative image dropped, substantive one kept → 5 elements
-    assert len(els) == 5
+    # decorative image dropped → 8 elements remain
+    assert len(els) == 8
     images = [e for e in els if has_type(e, NodeType.IMAGE)]
     assert len(images) == 1 and images[0]["blurb"] == "A unit circle."
 
-    # every text element cleaned; code element refined (spaces removed)
+    # code element refined (spaces removed)
     code = next(e for e in els if element_subtype(e) is NodeType.CODE)
     assert code["content"] == "print(1)" and code["refined_at"]
 
-    # everything embeddable has an embedding (4 text + 1 image blurb)
+    # every embeddable element got a vector (7 text + 1 image blurb)
     embedded = [e for e in els if e.get("embedding")]
-    assert len(embedded) == 5
+    assert len(embedded) == 8
 
-    # reading chain spans all 5 elements from the head
+    # distributor linked the instruction to both activities
+    links = await repo.run(
+        "MATCH (:`Instruction`)-[:`Instructs`]->(a:`Activity`) "
+        "WHERE a.source_uuid = $s RETURN count(*) AS n", s=uid,
+    )
+    assert links[0]["n"] == 2
+
+    # reading chain spans all 8 elements from the head
     chain = await repo.run(
         "MATCH p=(:`Source` {uuid:$s})-[:`Has`]->()-[:`Next`*]->() "
         "RETURN max(length(p)) AS len", s=uid,
     )
-    assert chain[0]["len"] == 5
+    assert chain[0]["len"] == 8
 
 
 async def test_resume_reembeds_only(service, repo):
     uid = await service.svc.ingest("/tmp/fake.pdf", title="Doc")
     calls_after_first = service.embedder.calls
-    assert calls_after_first == 5
+    assert calls_after_first == 8
 
     # Resume from the embedder stage: fingerprints match → no re-embedding.
-    await service.svc.ingest("/tmp/fake.pdf", source_uuid=uid, from_stage=7)
+    await service.svc.ingest("/tmp/fake.pdf", source_uuid=uid, from_stage=8)
     assert service.embedder.calls == calls_after_first
 
 

@@ -32,7 +32,7 @@
   CLI  ─────────▶│  Ingestion service (pipeline driver)                              │
   ingest <path>  │                                                                   │
                  │   Docling ─▶ Picture Filter ─▶ Cleaner ─▶ Extractor ─▶            │
-                 │             Seam Merger ─▶ Refiner ─▶ Embedder                     │
+                 │             Seam Merger ─▶ Distributor ─▶ Refiner ─▶ Embedder      │
                  │                                                                   │
                  │   DSPy (stage LLM I/O)   LangGraph (per-stage fan-out)            │
                  └───────────────┬───────────────────────────────────────────────────┘
@@ -50,7 +50,7 @@ Two supporting subsystems:
 
 ## 3. Pipeline stages
 
-The pipeline is a **linear 7-stage** flow. Every stage is **idempotent** and skippable when its
+The pipeline is a **linear 8-stage** flow. Every stage is **idempotent** and skippable when its
 work is already done (see §8). Intelligent stages are DSPy Signatures; each stage runs as a minimal
 LangGraph fan-out (`dispatch → worker → condense`) over a batch of nodes.
 
@@ -61,8 +61,9 @@ LangGraph fan-out (`dispatch → worker → condense`) over a batch of nodes.
 | 3 | **Cleaner** | DSPy (text) | each Element + neighbors | normalized `content` on each Element |
 | 4 | **Extractor** | DSPy (text) | Docling-typed Elements + neighbors | regrouped/retyped Elements (e.g. Instruction + Activities) |
 | 5 | **Seam Merger** | DSPy (text) | Elements at page boundaries | merged cross-page continuations |
-| 6 | **Refiner** | DSPy (text) | Code/Activity/Instruction/Admonition elements | refined `content` (+ structured fields) |
-| 7 | **Embedder** | embedding provider | each embeddable Element | `embedding` vector on each Element |
+| 6 | **Distributor** | DSPy (text) | Instruction + Activity elements | `Instructs` edges linking instructions → governed activities |
+| 7 | **Refiner** | DSPy (text) | Code/Activity/Instruction/Admonition elements | refined `content` (+ structured fields) |
+| 8 | **Embedder** | embedding provider | each embeddable Element | `embedding` vector on each Element |
 
 ### 3.1 Docling (provider)
 - Accepts **PDF** (`InputFormat.PDF`) or **image** (`InputFormat.IMAGE`). A loose image is treated as a single-page document.
@@ -101,12 +102,18 @@ LangGraph fan-out (`dispatch → worker → condense`) over a batch of nodes.
 - DSPy **text** Signature that heals **cross-page continuations**: a paragraph, table, or math block split across a page boundary becomes one Element.
 - **Single-pass** over adjacent page-boundary element pairs (simplified from Paideia's even/odd two-pass), followed by a deterministic **chain-anchor** pass that guarantees every reading-order adjacency has a live `Next` edge (so chain integrity never depends on a perfect LLM stitch).
 
-### 3.6 Refiner
+### 3.6 Distributor (Activity/Instruction)
+- Links each shared **Instruction** (a lead line, e.g. "1–20 Find the derivative…") to the **Activity** exercises it governs, via an `Instructs` edge, so every exercise carries its governing instruction.
+- **Windowing:** an Instruction governs the Activities that follow it in reading order until the next Instruction or Heading (section boundary).
+- An LLM confirms ambiguous pairs (`should_link`); with no decision it links the whole window. Idempotent via `distributed_at` on the Activity and a MERGE'd edge.
+- (Ported from Paideia's `activity_instruction_distributor`, simplified: window + LLM confirmation instead of identifier-range matching.)
+
+### 3.7 Refiner
 - DSPy **text** Signatures specialized per type: `Code`, `Activity`, `Instruction`, `Admonition`.
 - Refines/normalizes those specific element types (e.g. clean code fences, structure an exercise stem + subparts). Other types pass through untouched.
 - Idempotent per element.
 
-### 3.7 Embedder
+### 3.8 Embedder
 - One **text** embedding provider. For text-bearing Elements, embed the normalized (math-normalized) `content`; for **Image** elements, embed the **blurb** text.
 - Stores the vector on `Element.embedding`. Uses a **content fingerprint** to skip re-embedding unchanged content on re-runs.
 - After the source finishes, ensure the Neo4j vector index is **online/populated** (see §5.3).
@@ -131,6 +138,7 @@ LangGraph fan-out (`dispatch → worker → condense`) over a batch of nodes.
 | `Contains` | Source → Segment, Segment → Element | membership / structure |
 | `Has` | Source → head Element | entry point into the element reading chain |
 | `Next` | Element → Element | reading order |
+| `Instructs` | Instruction → Activity | a lead instruction governs an exercise |
 
 Membership (`Contains`) is the **authoritative selection** for batching, so a broken `Next`
 chain degrades ordering but never completeness.
@@ -281,8 +289,8 @@ math-trainer/
     ingestion/
       service.py            # pipeline driver (resume-from-stage)
       pipeline/graph.py     # minimal LangGraph builders
-      nodes/                # docling_provider, picture_filter, cleaner,
-                            #   extractor, seam_merger, refiner, embedder
+      stages/               # picture_filter, cleaner, extractor, seam_merger,
+                            #   distributor, refiner, embedder
       normalize.py
     core/
       config.py             # pydantic config (YAML + .env)
@@ -306,7 +314,7 @@ math-trainer/
 1. **Scaffold** — `pyproject.toml` (uv, py3.13), `docker-compose.yml`, config models, `.env.example`.
 2. **Storage** — async driver + repository + schema bootstrap (`init-db`); testcontainers fixture; storage tests (CRUD, chain, vector round-trip).
 3. **Docling provider** — remote-VLM conversion → `Source/Segment/Element` materialization + blurbs; fixture-based test.
-4. **Picture Filter → Cleaner → Extractor → Seam Merger → Refiner** — one stage at a time, each with a DSPy Signature and an idempotency marker.
+4. **Picture Filter → Cleaner → Extractor → Seam Merger → Distributor → Refiner** — one stage at a time, each with a DSPy Signature and an idempotency marker.
 5. **Embedder** + vector-index population; retrieval round-trip test.
 6. **Ingestion service** (resume-from-stage) + **CLI**; end-to-end fixture test (PDF + image).
 

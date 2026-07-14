@@ -4,7 +4,6 @@ Docling already produced the text; the Cleaner only ensures good format: normali
 markdown, enforce $…$/$$…$$ LaTeX, repair VLM artifacts. Per-Element, with prev/next
 context. Idempotent via ``cleaned_at``.
 """
-from __future__ import annotations
 
 from math_trainer.core.config import StageConfig
 from math_trainer.core.model.types import NodeType, has_type

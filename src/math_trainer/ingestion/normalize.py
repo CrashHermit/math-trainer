@@ -3,7 +3,6 @@
 Deliberately conservative: collapse redundant whitespace and unify a few common
 math-delimiter variants so equivalent content produces equivalent embeddings.
 """
-from __future__ import annotations
 
 import re
 

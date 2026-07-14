@@ -3,7 +3,6 @@
 ``${VAR}`` and ``${VAR:-default}`` placeholders in the YAML are interpolated from
 the process environment (with .env loaded first) before validation.
 """
-from __future__ import annotations
 
 import os
 import re

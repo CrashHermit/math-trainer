@@ -4,7 +4,6 @@ Kept simple by design — each node runs one stage and records progress. Resume 
 expressed by ``from_stage``: nodes numbered below it no-op, so re-running the graph
 from the start naturally skips completed work.
 """
-from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict
 

@@ -3,7 +3,6 @@
 A thin async wrapper over litellm's embedding API. Kept behind a small interface
 so the Embedder stage can be tested with a fake embedder and no model calls.
 """
-from __future__ import annotations
 
 from typing import Protocol
 

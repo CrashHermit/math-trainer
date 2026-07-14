@@ -10,7 +10,6 @@ Responsibilities:
 
 Design: docs/design/material_extraction_architecture.md §3.1, §4.
 """
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path

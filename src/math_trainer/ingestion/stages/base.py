@@ -5,7 +5,6 @@ LLM ``module`` (duck-typed ``aforward(**kwargs) -> prediction``), and a StageCon
 Keeping the LLM behind a small interface makes every stage testable with a fake
 module against a real Neo4j, with no DSPy/model dependency in the test path.
 """
-from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone

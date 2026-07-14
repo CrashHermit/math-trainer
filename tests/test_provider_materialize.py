@@ -1,5 +1,4 @@
 """Tests for DoclingProvider.materialize — pure graph logic, no Docling needed."""
-from __future__ import annotations
 
 from pathlib import Path
 

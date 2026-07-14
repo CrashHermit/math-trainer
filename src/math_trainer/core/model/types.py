@@ -5,7 +5,6 @@ Neo4j has no type inheritance, so every content node carries the base label
 vector index and generic Next-chaining target ``:Element``; type-specific stages
 filter on the concrete label.
 """
-from __future__ import annotations
 
 from enum import StrEnum
 
@@ -59,6 +58,7 @@ class EdgeType(StrEnum):
     CONTAINS = "Contains"   # Source→Segment, Segment→Element (membership/structure)
     HAS = "Has"             # Source→head Element (entry into the reading chain)
     NEXT = "Next"           # Element→Element (reading order)
+    INSTRUCTS = "Instructs" # Instruction→Activity (a lead instruction governs an exercise)
 
 
 # Docling DocItemLabel (lower-cased) → Element subtype. Unknown labels fall back

@@ -2,7 +2,6 @@
 
 Idempotent — safe to run on every startup / via `math-trainer init-db`.
 """
-from __future__ import annotations
 
 from math_trainer.core.config import EmbeddingConfig
 from math_trainer.core.model.types import NodeType

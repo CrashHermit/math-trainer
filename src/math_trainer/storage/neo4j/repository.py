@@ -5,7 +5,6 @@ Nodes are returned as plain property dicts; callers read ``node["uuid"]`` etc. L
 cannot be parametrized in Cypher, so every label is validated against NodeType before
 being interpolated.
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import uuid4

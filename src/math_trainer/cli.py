@@ -1,5 +1,4 @@
 """math-trainer CLI — a thin wrapper over the ingestion library core."""
-from __future__ import annotations
 
 import asyncio
 from pathlib import Path
@@ -37,7 +36,7 @@ def ingest(
     path: Path = typer.Argument(..., exists=True, help="PDF or image to ingest."),
     title: str = typer.Option(None, help="Document title (defaults to filename)."),
     source_uuid: str = typer.Option(None, help="Reuse/resume a specific Source uuid."),
-    from_stage: int = typer.Option(1, min=1, max=7, help="Resume from this stage."),
+    from_stage: int = typer.Option(1, min=1, max=8, help="Resume from this stage."),
     config: str = typer.Option(None, help="Path to config YAML."),
 ) -> None:
     """Run the full pipeline (or resume) on a PDF or image."""
@@ -58,7 +57,7 @@ def ingest(
 
 @app.command("stage")
 def stage(
-    number: int = typer.Argument(..., min=2, max=7, help="Stage number (2–7)."),
+    number: int = typer.Argument(..., min=2, max=8, help="Stage number (2–8)."),
     source_uuid: str = typer.Option(..., help="Source uuid to run the stage on."),
     config: str = typer.Option(None, help="Path to config YAML."),
 ) -> None:

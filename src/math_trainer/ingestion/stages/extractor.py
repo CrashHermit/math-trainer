@@ -9,7 +9,6 @@ The LLM module returns, per element, a prediction with ``items``: a list of
 ``{type, content}`` (dicts or attr-objects). One item with the same type is a
 no-op; a different type retypes; multiple items split in place.
 """
-from __future__ import annotations
 
 from typing import Any
 

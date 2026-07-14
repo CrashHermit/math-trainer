@@ -4,7 +4,6 @@ Heal cross-page continuations: an element whose content continues onto the next
 page is merged with its successor when they straddle a page boundary. Single pass
 over adjacent pairs, then the reading chain is rebuilt.
 """
-from __future__ import annotations
 
 from math_trainer.core.config import StageConfig
 from math_trainer.core.model.types import NodeType, has_type

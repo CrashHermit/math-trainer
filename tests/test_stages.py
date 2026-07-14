@@ -1,5 +1,4 @@
 """Stage graph-mutation tests with fake LLM modules, against real Neo4j."""
-from __future__ import annotations
 
 from types import SimpleNamespace
 
@@ -9,6 +8,7 @@ import pytest_asyncio
 from math_trainer.core.config import StageConfig
 from math_trainer.core.model.types import EdgeType, NodeType, element_subtype, has_type
 from math_trainer.ingestion.stages.cleaner import CleanerStage
+from math_trainer.ingestion.stages.distributor import DistributorStage
 from math_trainer.ingestion.stages.embedder import EmbedderStage
 from math_trainer.ingestion.stages.extractor import ExtractorStage
 from math_trainer.ingestion.stages.picture_filter import PictureFilterStage
@@ -176,3 +176,44 @@ async def test_embedder_text_and_blurb_and_skip(repo, source):
     # Re-run: fingerprints match, nothing re-embedded.
     await EmbedderStage(repo, embedder, CFG).run(source.uuid)
     assert embedder.calls == 2
+
+
+async def _instructs_count(repo, instruction_uuid) -> int:
+    rows = await repo.run(
+        "MATCH (:`Instruction` {uuid:$u})-[:`Instructs`]->(:`Activity`) RETURN count(*) AS n",
+        u=instruction_uuid,
+    )
+    return rows[0]["n"]
+
+
+async def test_distributor_links_window_and_respects_boundary(repo, source):
+    ins = await _mk_element(repo, source.uuid, source.seg1, NodeType.INSTRUCTION, 1, content="Solve:", page_no=1)
+    await _mk_element(repo, source.uuid, source.seg1, NodeType.ACTIVITY, 2, content="a1", page_no=1)
+    await _mk_element(repo, source.uuid, source.seg1, NodeType.ACTIVITY, 3, content="a2", page_no=1)
+    # A heading closes the window; the activity after it is NOT governed.
+    await _mk_element(repo, source.uuid, source.seg1, NodeType.HEADING, 4, content="Next section", page_no=1)
+    await _mk_element(repo, source.uuid, source.seg1, NodeType.ACTIVITY, 5, content="a3", page_no=1)
+
+    module = FakeModule(lambda **kw: SimpleNamespace(should_link=True))
+    await DistributorStage(repo, module, CFG).run(source.uuid)
+
+    assert await _instructs_count(repo, ins["uuid"]) == 2
+    els = await repo.source_elements_ordered(source.uuid)
+    a3 = next(e for e in els if e.get("content") == "a3")
+    incoming = await repo.run(
+        "MATCH (:`Instruction`)-[:`Instructs`]->(a:`Activity` {uuid:$u}) RETURN count(*) AS n",
+        u=a3["uuid"],
+    )
+    assert incoming[0]["n"] == 0
+
+
+async def test_distributor_skips_when_should_link_false(repo, source):
+    ins = await _mk_element(repo, source.uuid, source.seg1, NodeType.INSTRUCTION, 1, content="Solve:", page_no=1)
+    await _mk_element(repo, source.uuid, source.seg1, NodeType.ACTIVITY, 2, content="unrelated", page_no=1)
+    module = FakeModule(lambda **kw: SimpleNamespace(should_link=False))
+    await DistributorStage(repo, module, CFG).run(source.uuid)
+    assert await _instructs_count(repo, ins["uuid"]) == 0
+    # still marked processed so a re-run won't re-ask
+    els = await repo.source_elements_ordered(source.uuid)
+    act = next(e for e in els if element_subtype(e) is NodeType.ACTIVITY)
+    assert act.get("distributed_at")

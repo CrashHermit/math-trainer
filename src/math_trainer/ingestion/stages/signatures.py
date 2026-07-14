@@ -3,7 +3,6 @@
 The input/output field names match each stage's ``module.aforward(**kwargs)`` call
 and the attributes each stage reads off the prediction.
 """
-from __future__ import annotations
 
 import dspy
 from pydantic import BaseModel
@@ -59,6 +58,17 @@ class SeamMergerSignature(dspy.Signature):
     right_content: str = dspy.InputField(desc="Start of the later page's element.")
     merged: bool = dspy.OutputField(desc="True if right continues left.")
     merged_content: str = dspy.OutputField(desc="The merged content (if merged).")
+
+
+class LinkDecisionSignature(dspy.Signature):
+    """Decide whether a section-level Instruction from a textbook governs a specific
+    Activity (exercise). The Instruction is a lead line introducing exercises; the
+    Activity is a single exercise. Return should_link=true if the activity clearly
+    falls under the instruction's scope."""
+
+    instruction_text: str = dspy.InputField(desc="The full lead-instruction text.")
+    activity_content: str = dspy.InputField(desc="The exercise content.")
+    should_link: bool = dspy.OutputField(desc="True if the instruction governs this activity.")
 
 
 class RefinerSignature(dspy.Signature):

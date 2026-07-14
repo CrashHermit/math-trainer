@@ -3,7 +3,6 @@
 Refine specific element types (Code / Activity / Instruction / Admonition); other
 types pass through untouched. Idempotent via ``refined_at``.
 """
-from __future__ import annotations
 
 from math_trainer.core.config import StageConfig
 from math_trainer.core.model.types import REFINABLE_TYPES, element_subtype

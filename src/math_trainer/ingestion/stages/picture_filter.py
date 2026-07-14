@@ -3,7 +3,6 @@
 Judge each Image element (with its page raster as context) as substantive vs
 decorative; delete the decorative ones and re-stitch the reading chain.
 """
-from __future__ import annotations
 
 from typing import Any, Callable
 

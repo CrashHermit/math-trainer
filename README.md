@@ -9,7 +9,7 @@ for the full design.
 ## Pipeline
 
 ```
-Docling → Picture Filter → Cleaner → Extractor → Seam Merger → Refiner → Embedder
+Docling → Picture Filter → Cleaner → Extractor → Seam Merger → Distributor → Refiner → Embedder
 ```
 
 Docling (remote-VLM by default) is the sole text extractor and emits typed,
@@ -61,6 +61,7 @@ src/math_trainer/
   ingestion/
     service.py            # pipeline driver (resume-from-stage)
     pipeline/graph.py     # minimal LangGraph chain
-    nodes are in stages/  # picture_filter, cleaner, extractor, seam_merger, refiner, embedder
+    stages/               # picture_filter, cleaner, extractor, seam_merger,
+                          #   distributor, refiner, embedder
   storage/neo4j/          # async driver, repository, schema bootstrap
 ```

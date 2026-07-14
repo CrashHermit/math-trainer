@@ -4,7 +4,6 @@ Embed text-bearing Elements from their normalized content and Image Elements fro
 their blurb text, into ``embedding`` on the node. A content fingerprint skips
 re-embedding unchanged content on re-runs.
 """
-from __future__ import annotations
 
 import hashlib
 

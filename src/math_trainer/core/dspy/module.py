@@ -5,7 +5,6 @@ failure or timeout — every stage treats ``None`` as "leave unchanged", so a fl
 call degrades to a no-op rather than corrupting the graph. DSPy is imported lazily
 so importing this module does not require dspy to be installed.
 """
-from __future__ import annotations
 
 import asyncio
 import logging
