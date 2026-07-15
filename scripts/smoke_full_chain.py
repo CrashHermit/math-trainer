@@ -37,16 +37,27 @@ def _stage(**kw) -> StageConfig:
                        max_concurrent=4, num_retries=2, timeout_s=120.0, **kw)
 
 
+def _vision_stage() -> StageConfig:  # Picture Filter needs a vision model
+    return StageConfig(model="openai/gpt-4o-mini", api_key=OPENAI,
+                       max_concurrent=2, num_retries=2, timeout_s=120.0)
+
+
 def build_config(container: Neo4jContainer) -> Config:
     return Config(
         database=DatabaseConfig(uri=container.get_connection_url(), user="neo4j",
                                 password=container.password, database="neo4j"),
-        docling=DoclingConfig(mode="standard", do_ocr=False, do_formula_enrichment=False,
-                              output_dir="scratch_out"),
+        docling=DoclingConfig(
+            mode="standard", do_ocr=False, do_formula_enrichment=False,
+            output_dir="scratch_out",
+            # Docling generates a blurb per figure via a remote vision API (OpenAI).
+            picture_description_api_base="https://api.openai.com/v1/chat/completions",
+            picture_description_api_key=OPENAI,
+            picture_description_model="gpt-4o-mini",
+        ),
         embedding=EmbeddingConfig(model="openai/text-embedding-3-small", api_key=OPENAI,
                                   dimensions=1536, similarity="cosine"),
         stages={
-            "picture_filter": _stage(), "cleaner": _stage(), "extractor": _stage(),
+            "picture_filter": _vision_stage(), "cleaner": _stage(), "extractor": _stage(),
             "seam_merger": _stage(), "distributor": _stage(),
             "assembler": _stage(main_window_tokens=1500, context_window_tokens=400),
         },

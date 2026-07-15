@@ -48,7 +48,9 @@ class ExtractorSignature(dspy.Signature):
                      Corollary, Proof, or Remark is PROSE → `Paragraph`.** These are
                      statements to read, NOT tasks. NEVER type them Instruction/Activity.
       • Heading    — a section/subsection title, e.g. "3.2 The Derivative", "Exercises",
-                     "Problems". A heading is NEVER an Activity.
+                     "Problems". A heading is NEVER an Activity. A numbered
+                     learning-objective/goal line (e.g. "3.3.1 State the power rule.")
+                     is NOT a heading — it is a `ListItem`.
       • Instruction— ONLY a lead line that governs a group of exercises, e.g.
                      "1–20 Differentiate each function." It introduces tasks; it is not
                      itself a task, a theorem, or a proof.
@@ -148,6 +150,8 @@ class AssemblerSignature(dspy.Signature):
         split an example's statement, "Solution", or steps into separate units.
       • Separate a theorem/definition STATEMENT from its PROOF when they are in
         separate elements (a learner recalls the statement and proves it separately).
+      • Group a run of numbered learning objectives / goals into ONE "prose" unit —
+        do not alternate heading/prose across the items.
       • Put an identifier in `label` when present (e.g. "Definition 3.1", "Power Rule").
       • Members are a contiguous run of window uuids; cover every window uuid exactly
         once, except a trailing incomplete unit → put its uuids in `deferred`.

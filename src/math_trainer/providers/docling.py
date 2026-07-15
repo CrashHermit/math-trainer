@@ -141,6 +141,7 @@ class DoclingProvider:
             opts.do_ocr = self._config.do_ocr
             opts.do_formula_enrichment = self._config.do_formula_enrichment
             if picdesc is not None:
+                opts.enable_remote_services = True  # required for a remote blurb API
                 opts.do_picture_description = True
                 opts.picture_description_options = picdesc
             pdf_opt = PdfFormatOption(pipeline_options=opts)
