@@ -52,8 +52,14 @@ class ExtractorSignature(dspy.Signature):
       • Instruction— ONLY a lead line that governs a group of exercises, e.g.
                      "1–20 Differentiate each function." It introduces tasks; it is not
                      itself a task, a theorem, or a proof.
-      • Activity   — ONLY a single student exercise/problem to SOLVE, e.g. "3. f(x)=sin x".
-                     A proof, a theorem, or a heading is NEVER an Activity.
+      • Activity   — ONLY a standalone practice problem for the student to solve
+                     (typically numbered, in an Exercises/Problems set or a "Checkpoint").
+                     A proof, a theorem, or a heading is NEVER an Activity. The problem
+                     line INSIDE a worked Example (the "Find …" right after an
+                     "Example N" title) is NOT an Activity — it is part of the example,
+                     so leave it as `Paragraph`.
+      • "Solution" — the word "Solution" and the steps under a worked Example are part
+                     of that example → `Paragraph` (never a Heading).
       • Admonition — a boxed callout (Example, Note, Tip, Warning) kept whole.
       • Math/Table/Caption/List/ListItem/Code — as named.
 
@@ -134,10 +140,14 @@ class AssemblerSignature(dspy.Signature):
         a definition, and a theorem all in one text block), emit ONE unit for that
         element — label it by its dominant kind. Do NOT fabricate extra units for the
         parts you cannot separate.
-      • MERGE adjacent elements into one unit only when they are literally one thing:
-        a sentence/statement and its own display equation, or a block split mid-way.
-      • Separate a statement from its PROOF (and a problem from its SOLUTION) only when
-        they are in SEPARATE elements.
+      • MERGE adjacent elements into one unit when they form one thing: a
+        sentence/statement and its own display equation, or a block split mid-way.
+      • A worked EXAMPLE is ONE "example" unit spanning ALL its elements — the
+        "Example N" title, its problem statement, the word "Solution", every solution
+        step, and any figure — up to the next heading / example / exercise. Do NOT
+        split an example's statement, "Solution", or steps into separate units.
+      • Separate a theorem/definition STATEMENT from its PROOF when they are in
+        separate elements (a learner recalls the statement and proves it separately).
       • Put an identifier in `label` when present (e.g. "Definition 3.1", "Power Rule").
       • Members are a contiguous run of window uuids; cover every window uuid exactly
         once, except a trailing incomplete unit → put its uuids in `deferred`.
