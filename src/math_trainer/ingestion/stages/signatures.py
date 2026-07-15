@@ -31,21 +31,61 @@ class CleanerSignature(dspy.Signature):
 
 
 class ExtractedItem(BaseModel):
-    type: str  # an Element subtype label, e.g. "Paragraph", "Instruction", "Activity"
+    type: str   # one of the TYPE VOCABULARY below
     content: str
 
 
 class ExtractorSignature(dspy.Signature):
-    """Consolidate one already-typed content item into the correct pedagogical
-    element(s). Usually return it unchanged (one item). Split a shared instruction +
-    exercise list into one Instruction followed by one Activity per exercise. Retype
-    when the item is clearly an Admonition/Instruction/Activity."""
+    r"""Assign one already-extracted textbook item to the correct type, splitting it
+    into several items only when it clearly contains more than one.
+
+    TYPE VOCABULARY (use exactly these strings):
+      Paragraph, Heading, Math, Table, Caption, List, ListItem, Code,
+      Instruction, Activity, Admonition
+
+    WHAT EACH MEANS (read carefully — most items are prose and stay `Paragraph`):
+      • Paragraph  — ordinary exposition. **A Definition, Theorem, Lemma, Proposition,
+                     Corollary, Proof, or Remark is PROSE → `Paragraph`.** These are
+                     statements to read, NOT tasks. NEVER type them Instruction/Activity.
+      • Heading    — a section/subsection title, e.g. "3.2 The Derivative", "Exercises",
+                     "Problems". A heading is NEVER an Activity.
+      • Instruction— ONLY a lead line that governs a group of exercises, e.g.
+                     "1–20 Differentiate each function." It introduces tasks; it is not
+                     itself a task, a theorem, or a proof.
+      • Activity   — ONLY a single student exercise/problem to SOLVE, e.g. "3. f(x)=sin x".
+                     A proof, a theorem, or a heading is NEVER an Activity.
+      • Admonition — a boxed callout (Example, Note, Tip, Warning) kept whole.
+      • Math/Table/Caption/List/ListItem/Code — as named.
+
+    SPLITTING RULES:
+      • Default: return the item UNCHANGED as a single part with its correct type.
+      • If one item bundles a lead instruction AND its first exercise (e.g.
+        "1–3 Differentiate. 1. f(x)=x^2"), split into an Instruction part followed by
+        one Activity part.
+      • A numbered exercise list bundled in one item → one Activity per exercise.
+      • Use previous_context/next_context to retype a bare item: e.g. a lone
+        "f(x)=e^x" that follows other exercises under an exercises heading is an Activity.
+      • Never merge two distinct exercises into one part.
+
+    EXAMPLES:
+      current="**Theorem 3.4 (Power Rule).** If f(x)=x^n then f'(x)=nx^{n-1}."
+        → parts=[{type:"Paragraph", content:"**Theorem 3.4 (Power Rule).** …"}]
+      current="Proof. Expand (x+h)^n and cancel."   (a Theorem precedes it)
+        → parts=[{type:"Paragraph", content:"Proof. Expand (x+h)^n and cancel."}]
+      current="Exercises"
+        → parts=[{type:"Heading", content:"Exercises"}]
+      current="1–3 Differentiate each function. 1. f(x)=x^5"
+        → parts=[{type:"Instruction", content:"1–3 Differentiate each function."},
+                 {type:"Activity", content:"1. f(x)=x^5"}]
+      current="f(x)=\\sin x"   (prev is exercise 1, under an Exercises heading)
+        → parts=[{type:"Activity", content:"2. f(x)=\\sin x"}]
+    """
 
     previous_context: str | None = dspy.InputField(desc="Preceding element (read-only context).")
     current_content: str = dspy.InputField(desc="The item's content.")
     next_context: str | None = dspy.InputField(desc="Following element (read-only context).")
     parts: list[ExtractedItem] = dspy.OutputField(
-        desc="One or more typed items in reading order that replace the input."
+        desc="One or more typed items in reading order that replace the input (usually one)."
     )
 
 
@@ -72,28 +112,52 @@ class LinkDecisionSignature(dspy.Signature):
 
 
 class AssembledUnit(BaseModel):
-    kind: str          # a Block kind, e.g. "prose", "definition", "theorem", "example"
-    members: list[str] # uuids of the window blocks (contiguous) that form this unit
+    kind: str          # a KIND from the vocabulary below
+    members: list[str] # uuids of the window elements (contiguous) that form this unit
     label: str | None = None
 
 
 class AssemblerSignature(dspy.Signature):
-    """Segment a window of ungrouped content blocks into semantic units for a math
-    textbook. Group a definition, a theorem (with its statement), a worked example,
-    or a coherent prose+math cluster into one unit; keep a statement and its proof,
-    or a problem and its solution, as SEPARATE units. Return the units that are
-    fully contained in the window in order; put the uuids of a trailing unit that
-    is clearly incomplete (continues past the window) into `deferred` so it can be
-    completed with more context — do not guess its end."""
+    r"""Group a window of consecutive content elements into semantic units for a math
+    textbook. Each unit is the smallest self-contained thing a learner would study.
+
+    KIND VOCABULARY (choose the most specific; use "prose" only for plain exposition):
+      definition, theorem, example, remark, proof, prose, figure, table, code, heading
+
+    RULES — be FAITHFUL, do not invent units:
+      • Classify each element by the content of THAT element. A unit's kind must
+        describe what its member elements actually say. If an element's text is a
+        proof, its unit is "proof"; if it is an example, "example"; and so on.
+      • NEVER produce more units than elements, and never map an element onto a unit
+        whose kind does not match that element's own text (no shifting).
+      • If a SINGLE element already mixes several things (e.g. an intro sentence,
+        a definition, and a theorem all in one text block), emit ONE unit for that
+        element — label it by its dominant kind. Do NOT fabricate extra units for the
+        parts you cannot separate.
+      • MERGE adjacent elements into one unit only when they are literally one thing:
+        a sentence/statement and its own display equation, or a block split mid-way.
+      • Separate a statement from its PROOF (and a problem from its SOLUTION) only when
+        they are in SEPARATE elements.
+      • Put an identifier in `label` when present (e.g. "Definition 3.1", "Power Rule").
+      • Members are a contiguous run of window uuids; cover every window uuid exactly
+        once, except a trailing incomplete unit → put its uuids in `deferred`.
+
+    EXAMPLE — window elements (by their own content):
+      u1="3.2 The Derivative"            → {kind:"heading", members:["u1"]}
+      u2="Definition 3.1. … $f'(a)=…$"   → {kind:"definition", label:"Definition 3.1", members:["u2"]}
+      u3="Proof. Expand (x+h)^n …"       → {kind:"proof", members:["u3"]}
+      u4="Example 3.6. Differentiate …"  → {kind:"example", label:"Example 3.6", members:["u4"]}
+      → units in that order, deferred=[]
+    """
 
     window: list[dict] = dspy.InputField(
-        desc="Ordered content blocks {uuid, type, content} to segment."
+        desc="Ordered content elements {uuid, type, content} to group."
     )
     leading_context: str | None = dspy.InputField(
         desc="Short summary of the previously committed unit (read-only)."
     )
     trailing: list[dict] = dspy.InputField(
-        desc="Upcoming blocks just past the window (read-only, for seeing boundaries)."
+        desc="Upcoming elements just past the window (read-only, for seeing boundaries)."
     )
     units: list[AssembledUnit] = dspy.OutputField(
         desc="Complete units in reading order; members are window uuids."
