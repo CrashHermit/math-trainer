@@ -44,7 +44,7 @@ class ExtractorSignature(dspy.Signature):
     previous_context: str | None = dspy.InputField(desc="Preceding element (read-only context).")
     current_content: str = dspy.InputField(desc="The item's content.")
     next_context: str | None = dspy.InputField(desc="Following element (read-only context).")
-    items: list[ExtractedItem] = dspy.OutputField(
+    parts: list[ExtractedItem] = dspy.OutputField(
         desc="One or more typed items in reading order that replace the input."
     )
 

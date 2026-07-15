@@ -48,6 +48,11 @@ class DoclingConfig(BaseModel):
     image_scale: float = 2.0
     batch_size: int = 4
     output_dir: str = "output"
+    # standard-mode only: OCR is off by default (born-digital PDFs carry a text
+    # layer; scanned inputs use the remote VLM instead). Formula enrichment adds a
+    # model download, so it is opt-in.
+    do_ocr: bool = False
+    do_formula_enrichment: bool = False
 
 
 class EmbeddingConfig(BaseModel):

@@ -85,7 +85,7 @@ async def service(repo, tmp_path):
             image_loader=lambda p: None,
         ),
         CleanerStage(repo, FakeModule(lambda **kw: SimpleNamespace(content=(kw["current_content"] or "").strip())), CFG),
-        ExtractorStage(repo, FakeModule(lambda **kw: SimpleNamespace(items=None)), CFG),
+        ExtractorStage(repo, FakeModule(lambda **kw: SimpleNamespace(parts=None)), CFG),
         SeamMergerStage(repo, FakeModule(lambda **kw: SimpleNamespace(merged=False)), CFG),
         DistributorStage(repo, FakeModule(lambda **kw: SimpleNamespace(should_link=True)), CFG),
         AssemblerStage(

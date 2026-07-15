@@ -19,3 +19,7 @@ output/
 .ruff_cache/
 .mypy_cache/
 uv.lock
+
+# Smoke-test scratch
+scratch_*
+scratch_out/

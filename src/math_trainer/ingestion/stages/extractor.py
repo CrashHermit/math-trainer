@@ -63,16 +63,16 @@ class ExtractorStage:
                 current_content=element.get("content"),
                 next_context=(nxt or {}).get("content") if nxt else None,
             )
-            items = None if prediction is None else getattr(prediction, "items", None)
+            parts = None if prediction is None else getattr(prediction, "parts", None)
             current_type = element_subtype(element) or NodeType.PARAGRAPH
 
-            if not items:
+            if not parts:
                 await self._repo.update_node(element["uuid"], extracted_at=now_iso())
                 continue
 
-            if len(items) == 1:
-                new_type = _to_type(_read(items[0], "type"), current_type)
-                new_content = _read(items[0], "content") or element.get("content")
+            if len(parts) == 1:
+                new_type = _to_type(_read(parts[0], "type"), current_type)
+                new_content = _read(parts[0], "content") or element.get("content")
                 if new_type is not current_type:
                     await self._repo.set_element_type(element["uuid"], new_type, current_type)
                 await self._repo.update_node(
@@ -84,7 +84,7 @@ class ExtractorStage:
             base = float(element.get("order_index") or (index + 1))
             segment = await self._repo.segment_for_element(element["uuid"])
             new_uuids: list[str] = []
-            for j, sub in enumerate(items):
+            for j, sub in enumerate(parts):
                 sub_type = _to_type(_read(sub, "type"), current_type)
                 node = await self._repo.create_node(
                     [NodeType.ELEMENT, sub_type],

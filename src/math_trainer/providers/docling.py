@@ -138,7 +138,8 @@ class DoclingProvider:
             opts.images_scale = self._config.image_scale
             opts.generate_page_images = True
             opts.generate_picture_images = True
-            opts.do_formula_enrichment = self._config.mode == "standard"
+            opts.do_ocr = self._config.do_ocr
+            opts.do_formula_enrichment = self._config.do_formula_enrichment
             if picdesc is not None:
                 opts.do_picture_description = True
                 opts.picture_description_options = picdesc
@@ -306,6 +307,14 @@ class DoclingProvider:
         ) or None
 
     # ── Docling attribute extraction (guarded for testability) ──────────────
+    @staticmethod
+    def _page_image(page: Any) -> Any | None:
+        """The rendered page raster (PIL image), when Docling generated one."""
+        image = getattr(page, "image", None)
+        if image is None:
+            return None
+        return getattr(image, "pil_image", None)
+
     @staticmethod
     def _item_label(item: Any) -> str:
         label = getattr(item, "label", "")

@@ -91,12 +91,12 @@ async def test_extractor_split(repo, source):
 
     def split(**kw):
         if kw.get("current_content", "").startswith("1."):
-            return SimpleNamespace(items=[
+            return SimpleNamespace(parts=[
                 {"type": "Instruction", "content": "Solve:"},
                 {"type": "Activity", "content": "do x"},
                 {"type": "Activity", "content": "do y"},
             ])
-        return SimpleNamespace(items=[{"type": "Paragraph", "content": kw["current_content"]}])
+        return SimpleNamespace(parts=[{"type": "Paragraph", "content": kw["current_content"]}])
 
     await ExtractorStage(repo, FakeModule(split), CFG).run(source.uuid)
     els = await repo.source_elements_ordered(source.uuid)
@@ -109,7 +109,7 @@ async def test_extractor_split(repo, source):
 async def test_extractor_retype(repo, source):
     await _mk_element(repo, source.uuid, source.seg1, NodeType.PARAGRAPH, 1, content="Note: careful here", page_no=1)
     module = FakeModule(lambda **kw: SimpleNamespace(
-        items=[{"type": "Admonition", "content": kw["current_content"]}]
+        parts=[{"type": "Admonition", "content": kw["current_content"]}]
     ))
     await ExtractorStage(repo, module, CFG).run(source.uuid)
     els = await repo.source_elements_ordered(source.uuid)
